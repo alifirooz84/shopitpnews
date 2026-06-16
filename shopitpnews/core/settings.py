@@ -17,6 +17,7 @@ INSTALLED_APPS = [
     "listings",
     "orders",
     "payments",
+    "backoffice",
 ]
 
 MIDDLEWARE = [

@@ -1,0 +1,25 @@
+{% extends "backoffice/base.html" %}
+{% block title %}داشبورد مدیر{% endblock %}
+{% block content %}
+<section class="rounded-2xl bg-white p-5 shadow">
+  <h1 class="text-3xl font-bold">داشبورد مدیریت سیستم</h1>
+  <p class="mt-2 text-gray-600">نمای عملیاتی برای مدیریت کاربران، قیمت روز، سفارش‌ها و اختلافات.</p>
+</section>
+<section class="grid grid-cols-2 md:grid-cols-5 gap-4">
+  <div class="rounded-2xl bg-white p-5 shadow"><p class="text-gray-500">کاربران</p><strong class="text-2xl text-[#0d631b]">{{ users_count }}</strong></div>
+  <div class="rounded-2xl bg-white p-5 shadow"><p class="text-gray-500">آگهی فعال</p><strong class="text-2xl text-[#0d631b]">{{ active_listings_count }}</strong></div>
+  <div class="rounded-2xl bg-white p-5 shadow"><p class="text-gray-500">سفارش‌ها</p><strong class="text-2xl text-[#0d631b]">{{ orders_count }}</strong></div>
+  <div class="rounded-2xl bg-white p-5 shadow"><p class="text-gray-500">اختلافات</p><strong class="text-2xl text-red-700">{{ disputes_count }}</strong></div>
+  <div class="rounded-2xl bg-white p-5 shadow"><p class="text-gray-500">وجه امانی</p><strong class="text-2xl text-blue-700">{{ held_amount }}</strong></div>
+</section>
+<section class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+  <article class="rounded-2xl bg-white p-5 shadow">
+    <div class="flex justify-between mb-3"><h2 class="text-xl font-bold">قیمت روز</h2><a class="text-[#0d631b]" href="{% url 'backoffice:market_prices' %}">ویرایش</a></div>
+    <div class="space-y-2">{% for price in market_prices %}<div class="flex justify-between border-b py-2"><span>{{ price.title }}</span><strong>{{ price.price }} {{ price.unit }}</strong></div>{% empty %}<p class="text-gray-600">قیمتی ثبت نشده است.</p>{% endfor %}</div>
+  </article>
+  <article class="rounded-2xl bg-white p-5 shadow">
+    <div class="flex justify-between mb-3"><h2 class="text-xl font-bold">اختلافات باز</h2><a class="text-[#0d631b]" href="{% url 'backoffice:disputes' %}">مشاهده</a></div>
+    <div class="space-y-2">{% for order in disputed_orders %}<a class="block rounded-xl bg-yellow-50 p-3 text-yellow-900" href="{% url 'backoffice:dispute_detail' order.id %}">#{{ order.id }} - {{ order.listing.title }}</a>{% empty %}<p class="text-gray-600">اختلاف بازی وجود ندارد.</p>{% endfor %}</div>
+  </article>
+</section>
+{% endblock %}

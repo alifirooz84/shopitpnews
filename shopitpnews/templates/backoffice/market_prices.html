@@ -1,0 +1,14 @@
+{% extends "backoffice/base.html" %}
+{% block title %}مدیریت قیمت روز{% endblock %}
+{% block content %}
+<section class="rounded-2xl bg-white p-5 shadow"><h1 class="text-3xl font-bold">مدیریت قیمت روز</h1><p class="text-gray-600 mt-2">این شاخص‌ها در نوار قیمت داشبورد فرانت نمایش داده می‌شوند.</p></section>
+<section class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+  <form method="post" class="lg:col-span-1 rounded-2xl bg-white p-5 shadow space-y-4">{% csrf_token %}
+    {% for field in form %}<div><label class="block mb-2 font-bold text-sm">{{ field.label }}</label>{{ field }}{% for error in field.errors %}<p class="text-red-700 text-sm">{{ error }}</p>{% endfor %}</div>{% endfor %}
+    <button class="w-full rounded-xl bg-[#0d631b] py-3 text-white font-bold">ذخیره قیمت</button>
+  </form>
+  <div class="lg:col-span-2 space-y-3">
+    {% for price in market_prices %}<article class="rounded-2xl bg-white p-4 shadow flex flex-col md:flex-row md:items-center justify-between gap-3"><div><h3 class="font-bold">{{ price.title }}</h3><p class="text-sm text-gray-600">{{ price.price }} {{ price.unit }} - {{ price.get_direction_display }}</p></div><div class="flex gap-2"><form method="post">{% csrf_token %}<input type="hidden" name="price_id" value="{{ price.id }}"><input type="hidden" name="title" value="{{ price.title }}"><input type="hidden" name="price" value="{{ price.price }}"><input type="hidden" name="unit" value="{{ price.unit }}"><input type="hidden" name="direction" value="{{ price.direction }}"><input type="hidden" name="display_order" value="{{ price.display_order|add:1 }}"><button class="rounded-xl border px-4 py-2">افزایش ترتیب</button></form><form method="post" action="{% url 'backoffice:delete_market_price' price.id %}">{% csrf_token %}<button class="rounded-xl border-2 border-red-600 px-4 py-2 text-red-700">حذف</button></form></div></article>{% empty %}<p class="rounded-2xl bg-white p-5 shadow text-gray-600">قیمتی ثبت نشده است.</p>{% endfor %}
+  </div>
+</section>
+{% endblock %}

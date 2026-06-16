@@ -30,3 +30,19 @@ class Order(models.Model):
 
     def __str__(self):
         return f"{self.get_order_type_display()} - {self.listing}"
+
+    @property
+    def is_active_escrow(self):
+        return self.status == self.Status.PAID_HELD
+
+    @property
+    def can_be_cancelled(self):
+        return self.status in {self.Status.PENDING_PAYMENT, self.Status.PAID_HELD}
+
+    @property
+    def can_be_disputed(self):
+        return self.status == self.Status.PAID_HELD
+
+    @property
+    def can_confirm_delivery(self):
+        return self.status == self.Status.PAID_HELD

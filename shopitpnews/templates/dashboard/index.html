@@ -39,7 +39,7 @@
     <div class="flex gap-4 overflow-x-auto pb-2">
       {% for listing in featured_listings %}
       <a href="{{ listing.get_absolute_url }}" class="min-w-[280px] bg-white rounded-2xl shadow overflow-hidden">
-        {% if listing.image_url %}<img src="{{ listing.image_url }}" alt="{{ listing.title }}" class="h-36 w-full object-cover">{% endif %}
+        {% if listing.display_image_url %}<img src="{{ listing.display_image_url }}" alt="{{ listing.title }}" class="h-36 w-full object-cover">{% endif %}
         <div class="p-4"><h3 class="font-bold">{{ listing.title }}</h3><p class="text-sm text-gray-600">{{ listing.province }}، {{ listing.city }}</p><p class="text-[#0d631b] font-bold mt-2">{{ listing.price_per_chick }} تومان</p></div>
       </a>
       {% empty %}<p class="text-gray-600">هنوز آگهی ویژه‌ای ثبت نشده است.</p>{% endfor %}

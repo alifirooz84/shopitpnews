@@ -30,3 +30,26 @@ class OtpFlowTests(TestCase):
         user.refresh_from_db()
         self.assertEqual(user.role, User.Role.GROW_OUT)
         self.assertEqual(user.city, "ورامین")
+
+
+class SellerProfileTests(TestCase):
+    def test_seller_profile_shows_active_listings(self):
+        from datetime import timedelta
+        from django.contrib.auth import get_user_model
+        from django.utils import timezone
+        from listings.models import Listing
+
+        seller = get_user_model().objects.create_user(username="seller-profile", phone="09125555555")
+        Listing.objects.create(
+            seller=seller,
+            title="آگهی پروفایل فروشنده",
+            breed="آرین",
+            quantity=100,
+            price_per_chick=18000,
+            province="مازندران",
+            city="بابل",
+            delivery_date=timezone.localdate() + timedelta(days=2),
+        )
+        response = self.client.get(reverse("accounts:seller_profile", args=[seller.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "آگهی پروفایل فروشنده")

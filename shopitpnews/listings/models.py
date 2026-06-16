@@ -12,6 +12,7 @@ class Listing(models.Model):
         ACTIVE = "active", "فعال"
         RESERVED = "reserved", "رزرو شده"
         SOLD = "sold", "فروخته شده"
+        INACTIVE = "inactive", "حذف شده"
 
     seller = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="listings")
     title = models.CharField(max_length=160)
@@ -30,6 +31,7 @@ class Listing(models.Model):
     egg_weight_grams = models.PositiveSmallIntegerField(default=62)
     vaccination_status = models.CharField(max_length=120, default="کامل")
     reservation_percent = models.PositiveSmallIntegerField(default=0)
+    image = models.FileField(upload_to="listing-images/", blank=True)
     image_url = models.URLField(blank=True)
     is_verified = models.BooleanField(default=False)
     is_featured = models.BooleanField(default=False)
@@ -48,6 +50,16 @@ class Listing(models.Model):
 
     def get_absolute_url(self):
         return reverse("listings:detail", kwargs={"pk": self.pk})
+
+    @property
+    def display_image_url(self):
+        if self.image:
+            return self.image.url
+        return self.image_url
+
+    @property
+    def is_orderable(self):
+        return self.status == self.Status.ACTIVE and self.quantity > 0
 
 
 class MarketPrice(models.Model):

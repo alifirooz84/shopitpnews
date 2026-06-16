@@ -22,6 +22,7 @@ class ListingForm(forms.ModelForm):
             "hatch_rate_percent",
             "egg_weight_grams",
             "vaccination_status",
+            "image",
             "image_url",
         )
         labels = {
@@ -39,16 +40,18 @@ class ListingForm(forms.ModelForm):
             "hatch_rate_percent": "درصد جوجه دهی",
             "egg_weight_grams": "میانگین وزن تخم مرغ",
             "vaccination_status": "وضعیت واکسیناسیون",
-            "image_url": "آدرس تصویر",
+            "image": "تصویر آگهی",
+            "image_url": "آدرس تصویر خارجی",
         }
         widgets = {
             "description": forms.Textarea(attrs={"rows": 4}),
             "delivery_date": forms.DateInput(attrs={"type": "date"}),
-            "image_url": forms.URLInput(attrs={"placeholder": "اختیاری"}),
+            "image_url": forms.URLInput(attrs={"placeholder": "اختیاری، اگر فایل تصویر ندارید"}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["image"].required = False
         for field in self.fields.values():
             field.widget.attrs.setdefault(
                 "class",
@@ -61,6 +64,10 @@ class ListingForm(forms.ModelForm):
             raise forms.ValidationError("تاریخ تحویل نمی‌تواند در گذشته باشد.")
         return delivery_date
 
-    def clean_reservation_percent(self):
-        value = self.cleaned_data.get("reservation_percent", 0)
-        return min(max(value, 0), 100)
+    def clean(self):
+        cleaned = super().clean()
+        image = cleaned.get("image")
+        image_url = cleaned.get("image_url")
+        if image and image_url:
+            self.add_error("image_url", "وقتی فایل تصویر بارگذاری شده، آدرس تصویر خارجی لازم نیست.")
+        return cleaned

@@ -2,12 +2,16 @@ import json
 import re
 
 from django.conf import settings
+from django.contrib import messages
 from django.contrib.auth import get_user_model, login
 from django.contrib.auth.decorators import login_required
-from django.contrib import messages
+from django.db.models import Count, Sum
 from django.http import JsonResponse
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
+
+from listings.models import Listing
+from orders.models import Order
 
 from .forms import ProfileForm
 from .models import OtpCode, User
@@ -86,4 +90,18 @@ def profile(request):
             return redirect("accounts:profile")
     else:
         form = ProfileForm(instance=request.user)
-    return render(request, "accounts/profile.html", {"form": form})
+    active_listings = request.user.listings.filter(status=Listing.Status.ACTIVE)[:4]
+    return render(request, "accounts/profile.html", {"form": form, "active_listings": active_listings})
+
+
+def seller_profile(request, pk):
+    seller = get_object_or_404(get_user_model(), pk=pk, is_active=True)
+    listings = seller.listings.filter(status=Listing.Status.ACTIVE)
+    completed_orders = Order.objects.filter(listing__seller=seller, status=Order.Status.DELIVERED)
+    stats = {
+        "active_listings": listings.count(),
+        "completed_orders": completed_orders.count(),
+        "total_volume": completed_orders.aggregate(total=Sum("quantity"))["total"] or 0,
+        "buyers_count": completed_orders.values("buyer").distinct().count(),
+    }
+    return render(request, "accounts/seller_profile.html", {"seller": seller, "listings": listings, "stats": stats})

@@ -3,17 +3,20 @@ import re
 
 from django.conf import settings
 from django.contrib.auth import get_user_model, login
+from django.contrib.auth.decorators import login_required
+from django.contrib import messages
 from django.http import JsonResponse
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 from django.views.decorators.http import require_POST
 
+from .forms import ProfileForm
 from .models import OtpCode, User
 
 PHONE_RE = re.compile(r"^09\d{9}$")
 
 
 def login_page(request):
-    return render(request, "accounts/login.html")
+    return render(request, "accounts/login.html", {"next_url": request.GET.get("next") or "/"})
 
 
 def _json_body(request):
@@ -62,15 +65,25 @@ def save_profile(request):
     if not request.user.is_authenticated:
         return JsonResponse({"ok": False, "error": "ابتدا وارد شوید."}, status=403)
 
-    role = _json_body(request).get("role", "")
+    data = _json_body(request)
+    role = data.get("role", "")
     valid_roles = {choice.value for choice in User.Role}
     if role not in valid_roles:
         return JsonResponse({"ok": False, "error": "نوع فعالیت معتبر نیست."}, status=400)
 
     request.user.role = role
     request.user.save(update_fields=["role"])
-    return JsonResponse({"ok": True, "redirect": "/"})
+    return JsonResponse({"ok": True, "redirect": data.get("next") or "/"})
 
 
+@login_required
 def profile(request):
-    return render(request, "accounts/profile.html")
+    if request.method == "POST":
+        form = ProfileForm(request.POST, instance=request.user)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "پروفایل شما با موفقیت ذخیره شد.")
+            return redirect("accounts:profile")
+    else:
+        form = ProfileForm(instance=request.user)
+    return render(request, "accounts/profile.html", {"form": form})

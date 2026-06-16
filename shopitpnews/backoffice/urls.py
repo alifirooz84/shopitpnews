@@ -10,6 +10,7 @@ urlpatterns = [
     path("prices/<int:pk>/delete/", views.delete_market_price, name="delete_market_price"),
     path("users/", views.users, name="users"),
     path("users/<int:pk>/action/", views.user_action, name="user_action"),
+    path("newsletters/", views.newsletters, name="newsletters"),
     path("financial/", views.financial_reports, name="financial_reports"),
     path("financial.csv", views.financial_reports_csv, name="financial_reports_csv"),
     path("settlements/<int:pk>/paid/", views.mark_settlement_paid, name="mark_settlement_paid"),

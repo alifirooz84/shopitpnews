@@ -12,8 +12,10 @@ from django.views.decorators.http import require_POST
 from listings.models import Listing, MarketPrice
 from orders.models import Order
 from payments.models import Payment, Settlement
+from notifications.models import MessageOutbox
+from notifications.services import broadcast_newsletter, notify_user
 
-from .forms import MarketPriceForm
+from .forms import MarketPriceForm, NewsletterForm
 
 
 @staff_member_required
@@ -125,7 +127,9 @@ def resolve_dispute(request, pk):
             order.save(update_fields=["status", "updated_at"])
             order.payment.status = Payment.Status.RELEASED
             order.payment.save(update_fields=["status", "updated_at"])
-            order.payment.create_settlement()
+            settlement = order.payment.create_settlement()
+            notify_user(order.listing.seller, "اختلاف به نفع شما بسته شد", f"وجه سفارش #{order.pk} آزاد شد و مبلغ خالص {settlement.net_amount if settlement else order.payment.seller_amount} تومان در دفتر تسویه ثبت شد.", link_url="/payments/reports/", level="success", queue_sms=True)
+            notify_user(order.buyer, "اختلاف سفارش بسته شد", f"اختلاف سفارش #{order.pk} بررسی و وجه برای فروشنده آزاد شد.", link_url=f"/orders/{order.pk}/", level="info")
             messages.success(request, "اختلاف به نفع فروشنده بسته شد و وجه آزاد شد.")
         elif resolution == "refund":
             listing = Listing.objects.select_for_update().get(pk=order.listing_id)
@@ -138,6 +142,8 @@ def resolve_dispute(request, pk):
                 listing.status = Listing.Status.ACTIVE
             listing.reservation_percent = max(0, listing.reservation_percent - 10)
             listing.save(update_fields=["quantity", "status", "reservation_percent", "updated_at"])
+            notify_user(order.buyer, "اختلاف به نفع شما بسته شد", f"وجه سفارش #{order.pk} در وضعیت بازگشت قرار گرفت.", link_url=f"/orders/{order.pk}/", level="success", queue_sms=True)
+            notify_user(order.listing.seller, "اختلاف سفارش بسته شد", f"اختلاف سفارش #{order.pk} به بازگشت وجه منجر شد.", link_url=f"/orders/{order.pk}/", level="warning")
             messages.success(request, "اختلاف به نفع خریدار بسته شد و وجه بازگشت خورد.")
         else:
             messages.error(request, "تصمیم مدیر معتبر نیست.")
@@ -190,5 +196,35 @@ def financial_reports_csv(request):
 def mark_settlement_paid(request, pk):
     settlement = get_object_or_404(Settlement, pk=pk, status=Settlement.Status.PENDING)
     settlement.mark_paid(notes=request.POST.get("notes", ""))
+    notify_user(settlement.seller, "تسویه واریز شد", f"تسویه سفارش #{settlement.payment.order_id} به مبلغ {settlement.net_amount} تومان به عنوان واریز شده ثبت شد.", link_url="/payments/reports/", level="success", queue_sms=True)
     messages.success(request, "تسویه به عنوان واریز شده ثبت شد.")
     return redirect("backoffice:financial_reports")
+
+
+@staff_member_required
+def newsletters(request):
+    form = NewsletterForm(request.POST or None)
+    user_model = get_user_model()
+    if request.method == "POST" and form.is_valid():
+        target = form.cleaned_data["target"]
+        users = user_model.objects.filter(is_active=True)
+        if target == NewsletterForm.Target.VERIFIED:
+            users = users.filter(is_phone_verified=True)
+        elif target == NewsletterForm.Target.SELLERS:
+            users = users.filter(listings__isnull=False).distinct()
+        elif target == NewsletterForm.Target.BUYERS:
+            users = users.filter(orders__isnull=False).distinct()
+        count = broadcast_newsletter(users, form.cleaned_data["title"], form.cleaned_data["body"])
+        if form.cleaned_data["queue_sms"]:
+            for user in users.exclude(phone__exact=""):
+                MessageOutbox.objects.create(
+                    recipient=user,
+                    recipient_phone=user.phone,
+                    channel=MessageOutbox.Channel.SMS,
+                    subject=form.cleaned_data["title"],
+                    body=form.cleaned_data["body"],
+                )
+        messages.success(request, f"خبرنامه برای {count} کاربر ثبت شد.")
+        return redirect("backoffice:newsletters")
+    outbox = MessageOutbox.objects.select_related("recipient")[:50]
+    return render(request, "backoffice/newsletters.html", {"form": form, "outbox": outbox})

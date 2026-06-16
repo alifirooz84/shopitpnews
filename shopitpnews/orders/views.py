@@ -7,6 +7,8 @@ from django.views.decorators.http import require_POST
 
 from listings.models import Listing
 from payments.models import Payment
+from notifications.models import Notification
+from notifications.services import notify_user
 
 from .models import Order
 
@@ -81,6 +83,21 @@ def create_order(request, listing_id):
             listing.reservation_percent = min(99, listing.reservation_percent + 10)
         listing.save(update_fields=["quantity", "status", "reservation_percent", "updated_at"])
 
+    notify_user(
+        listing.seller,
+        "سفارش جدید برای آگهی شما",
+        f"برای آگهی {listing.title} سفارش {quantity} قطعه ثبت شد و وجه در پرداخت امن نگهداری می‌شود.",
+        link_url=f"/orders/{order.pk}/",
+        level=Notification.Level.SUCCESS,
+        queue_sms=True,
+    )
+    notify_user(
+        request.user,
+        "سفارش شما ثبت شد",
+        f"سفارش {quantity} قطعه از آگهی {listing.title} ثبت شد و وجه در پرداخت امن قرار گرفت.",
+        link_url=f"/orders/{order.pk}/",
+        level=Notification.Level.SUCCESS,
+    )
     messages.success(request, "سفارش ثبت شد و مبلغ در وضعیت پرداخت امن قرار گرفت.")
     return redirect("orders:detail", pk=order.pk)
 
@@ -97,7 +114,16 @@ def confirm_delivery(request, pk):
     order.save(update_fields=["status", "updated_at"])
     order.payment.status = Payment.Status.RELEASED
     order.payment.save(update_fields=["status", "updated_at"])
-    order.payment.create_settlement()
+    settlement = order.payment.create_settlement()
+    notify_user(
+        order.listing.seller,
+        "وجه سفارش آزاد شد",
+        f"تحویل سفارش #{order.pk} تأیید شد. مبلغ خالص {settlement.net_amount if settlement else order.payment.seller_amount} تومان در دفتر تسویه ثبت شد.",
+        link_url="/payments/reports/",
+        level=Notification.Level.SUCCESS,
+        queue_sms=True,
+    )
+    notify_user(request.user, "تحویل ثبت شد", f"تحویل سفارش #{order.pk} تأیید شد.", link_url=f"/orders/{order.pk}/", level=Notification.Level.SUCCESS)
     messages.success(request, "تحویل تأیید شد و وجه پس از کسر کارمزد برای فروشنده آزاد شد.")
     return redirect("orders:detail", pk=order.pk)
 
@@ -122,6 +148,8 @@ def cancel_order(request, pk):
         listing.reservation_percent = max(0, listing.reservation_percent - 10)
         listing.save(update_fields=["quantity", "status", "reservation_percent", "updated_at"])
 
+    notify_user(order.listing.seller, "سفارش لغو شد", f"سفارش #{order.pk} لغو شد و موجودی به آگهی برگشت.", link_url=f"/orders/{order.pk}/", level=Notification.Level.WARNING)
+    notify_user(request.user, "بازگشت وجه ثبت شد", f"سفارش #{order.pk} لغو شد و وجه در وضعیت بازگشت قرار گرفت.", link_url=f"/orders/{order.pk}/", level=Notification.Level.WARNING)
     messages.success(request, "سفارش لغو شد و وجه در وضعیت بازگشت قرار گرفت.")
     return redirect("orders:detail", pk=order.pk)
 
@@ -138,5 +166,8 @@ def report_dispute(request, pk):
     order.save(update_fields=["status", "updated_at"])
     order.payment.status = Payment.Status.HELD
     order.payment.save(update_fields=["status", "updated_at"])
+    other_party = order.listing.seller if request.user == order.buyer else order.buyer
+    notify_user(other_party, "اختلاف برای سفارش ثبت شد", f"برای سفارش #{order.pk} اختلاف ثبت شد و وجه تا تصمیم مدیر نگهداری می‌شود.", link_url=f"/orders/{order.pk}/", level=Notification.Level.WARNING, queue_sms=True)
+    notify_user(request.user, "اختلاف شما ثبت شد", f"اختلاف سفارش #{order.pk} ثبت شد و مدیر آن را بررسی می‌کند.", link_url=f"/orders/{order.pk}/", level=Notification.Level.WARNING)
     messages.warning(request, "اختلاف ثبت شد. وجه تا تصمیم مدیر نزد سامانه نگهداری می‌شود.")
     return redirect("orders:detail", pk=order.pk)

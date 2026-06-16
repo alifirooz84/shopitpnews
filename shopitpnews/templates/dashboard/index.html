@@ -10,7 +10,7 @@
 </head>
 <body class="bg-[#f7fbf0] text-[#181d17] min-h-screen">
 <header class="sticky top-0 z-50 bg-[#f1f5eb] shadow-sm px-4 py-3 flex items-center justify-between">
-  <a href="{% url 'listings:list' %}" class="text-[#0d631b]">جستجو</a>
+  <a href="{% url 'listings:list' %}" class="text-[#0d631b]">جستجو</a>{% if user.is_authenticated %}<a href="{% url 'notifications:list' %}" class="text-[#0d631b]">اعلان‌ها</a>{% endif %}
   <h1 class="text-2xl font-bold text-[#0d631b]">جوجه بازار</h1>
   {% if user.is_staff %}<a href="{% url 'backoffice:overview' %}" class="text-[#0d631b]">مدیریت</a>{% elif user.is_authenticated %}<a href="{% url 'accounts:profile' %}" class="text-[#0d631b]">پروفایل</a>{% else %}<a href="{% url 'accounts:login' %}" class="text-[#0d631b]">ورود</a>{% endif %}
 </header>

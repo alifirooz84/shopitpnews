@@ -8,6 +8,7 @@ from django.utils import timezone
 from listings.models import Listing, MarketPrice
 from orders.models import Order
 from payments.models import Payment, Settlement
+from notifications.models import MessageOutbox, Notification
 
 
 class BackofficeTests(TestCase):
@@ -127,3 +128,21 @@ class BackofficeFinancialTests(TestCase):
         self.settlement.refresh_from_db()
         self.assertEqual(self.settlement.status, Settlement.Status.PAID)
         self.assertEqual(self.settlement.notes, "paid")
+
+
+class NewsletterBackofficeTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.staff = user_model.objects.create_user(username="newsletter-admin", phone="09128888990", is_staff=True)
+        self.user = user_model.objects.create_user(username="newsletter-user", phone="09128888991", is_phone_verified=True)
+
+    def test_staff_can_send_newsletter(self):
+        self.client.force_login(self.staff)
+        response = self.client.post(
+            reverse("backoffice:newsletters"),
+            {"title": "خبر بازار", "body": "متن خبرنامه", "target": "verified", "queue_sms": "on"},
+        )
+        self.assertRedirects(response, reverse("backoffice:newsletters"))
+        self.assertTrue(Notification.objects.filter(recipient=self.user, title="خبر بازار").exists())
+        self.assertTrue(MessageOutbox.objects.filter(recipient=self.user, channel=MessageOutbox.Channel.NEWSLETTER).exists())
+        self.assertTrue(MessageOutbox.objects.filter(recipient=self.user, channel=MessageOutbox.Channel.SMS).exists())

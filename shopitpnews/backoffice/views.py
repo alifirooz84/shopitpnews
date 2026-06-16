@@ -1,14 +1,17 @@
+import csv
+
 from django.contrib import messages
 from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Count, Q, Sum
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from listings.models import Listing, MarketPrice
 from orders.models import Order
-from payments.models import Payment
+from payments.models import Payment, Settlement
 
 from .forms import MarketPriceForm
 
@@ -122,6 +125,7 @@ def resolve_dispute(request, pk):
             order.save(update_fields=["status", "updated_at"])
             order.payment.status = Payment.Status.RELEASED
             order.payment.save(update_fields=["status", "updated_at"])
+            order.payment.create_settlement()
             messages.success(request, "اختلاف به نفع فروشنده بسته شد و وجه آزاد شد.")
         elif resolution == "refund":
             listing = Listing.objects.select_for_update().get(pk=order.listing_id)
@@ -139,3 +143,52 @@ def resolve_dispute(request, pk):
             messages.error(request, "تصمیم مدیر معتبر نیست.")
             return redirect("backoffice:dispute_detail", pk=pk)
     return redirect("backoffice:disputes")
+
+
+@staff_member_required
+def financial_reports(request):
+    payments = Payment.objects.select_related("order", "order__buyer", "order__listing", "order__listing__seller")
+    settlements = Settlement.objects.select_related("seller", "payment", "payment__order", "payment__order__listing")
+    context = {
+        "payments": payments[:50],
+        "settlements": settlements[:50],
+        "held_total": payments.filter(status=Payment.Status.HELD).aggregate(total=Sum("amount"))["total"] or 0,
+        "released_total": payments.filter(status=Payment.Status.RELEASED).aggregate(total=Sum("amount"))["total"] or 0,
+        "refunded_total": payments.filter(status=Payment.Status.REFUNDED).aggregate(total=Sum("amount"))["total"] or 0,
+        "commission_total": sum(payment.commission_amount for payment in payments.filter(status=Payment.Status.RELEASED)),
+        "pending_settlement_total": settlements.filter(status=Settlement.Status.PENDING).aggregate(total=Sum("net_amount"))["total"] or 0,
+        "paid_settlement_total": settlements.filter(status=Settlement.Status.PAID).aggregate(total=Sum("net_amount"))["total"] or 0,
+    }
+    return render(request, "backoffice/financial_reports.html", context)
+
+
+@staff_member_required
+def financial_reports_csv(request):
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = 'attachment; filename="platform-financial-report.csv"'
+    response.write("﻿")
+    writer = csv.writer(response)
+    writer.writerow(["settlement_id", "order_id", "seller", "listing", "gross", "commission", "net", "status", "created_at", "paid_at"])
+    for settlement in Settlement.objects.select_related("seller", "payment", "payment__order", "payment__order__listing"):
+        writer.writerow([
+            settlement.id,
+            settlement.payment.order_id,
+            settlement.seller.phone or settlement.seller.username,
+            settlement.payment.order.listing.title,
+            settlement.gross_amount,
+            settlement.commission_amount,
+            settlement.net_amount,
+            settlement.get_status_display(),
+            settlement.created_at.isoformat(),
+            settlement.paid_at.isoformat() if settlement.paid_at else "",
+        ])
+    return response
+
+
+@staff_member_required
+@require_POST
+def mark_settlement_paid(request, pk):
+    settlement = get_object_or_404(Settlement, pk=pk, status=Settlement.Status.PENDING)
+    settlement.mark_paid(notes=request.POST.get("notes", ""))
+    messages.success(request, "تسویه به عنوان واریز شده ثبت شد.")
+    return redirect("backoffice:financial_reports")

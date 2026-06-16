@@ -97,6 +97,7 @@ def confirm_delivery(request, pk):
     order.save(update_fields=["status", "updated_at"])
     order.payment.status = Payment.Status.RELEASED
     order.payment.save(update_fields=["status", "updated_at"])
+    order.payment.create_settlement()
     messages.success(request, "تحویل تأیید شد و وجه پس از کسر کارمزد برای فروشنده آزاد شد.")
     return redirect("orders:detail", pk=order.pk)
 

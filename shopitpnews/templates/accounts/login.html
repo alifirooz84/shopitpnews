@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="fa">
+<head>
+  <meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+  <title>ورود | جوجه بازار</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700&display=swap" rel="stylesheet"/>
+  <style>body{font-family:'Vazirmatn',sans-serif;background:#f7fbf0}.hidden{display:none}</style>
+</head>
+<body class="min-h-screen bg-[#f7fbf0] text-[#181d17] flex flex-col items-center">
+<header class="w-full bg-[#f1f5eb] shadow px-4 py-3 flex justify-between"><a href="{% url 'dashboard' %}" class="text-[#0d631b]">خانه</a><h1 class="font-bold text-[#0d631b]">جوجه بازار</h1><span></span></header>
+<main class="w-full max-w-md p-4 pt-10 space-y-6">
+  {% csrf_token %}
+  <div class="grid grid-cols-3 gap-2"><div id="step-1-dot" class="h-2 rounded bg-[#0d631b]"></div><div id="step-2-dot" class="h-2 rounded bg-gray-300"></div><div id="step-3-dot" class="h-2 rounded bg-gray-300"></div></div>
+  <p id="message" class="hidden rounded-xl p-3 text-sm"></p>
+  <section id="phone-section" class="space-y-5"><h2 class="text-3xl font-bold">خوش آمدید!</h2><p class="text-gray-600">برای شروع، شماره موبایل خود را وارد کنید.</p><input id="phone-input" dir="ltr" class="w-full h-14 rounded-xl border-gray-300 text-left" placeholder="09123456789" type="tel"><button id="request-otp" class="w-full h-14 bg-[#0d631b] text-white rounded-xl font-bold">ادامه</button></section>
+  <section id="otp-section" class="hidden space-y-5"><h2 class="text-3xl font-bold">کد تایید</h2><p class="text-gray-600">کد ۶ رقمی ارسال شده را وارد کنید. در حالت توسعه کد 123456 است.</p><div class="grid grid-cols-6 gap-2" dir="ltr">{% for i in '123456' %}<input class="otp-input h-14 rounded-xl border-gray-300 text-center font-bold" maxlength="1" type="text">{% endfor %}</div><button id="verify-otp" class="w-full h-14 bg-[#0d631b] text-white rounded-xl font-bold">تایید و ادامه</button><button type="button" onclick="nextStep(1)" class="w-full h-14 border-2 border-[#0d631b] text-[#0d631b] rounded-xl">تغییر شماره</button></section>
+  <section id="profile-section" class="hidden space-y-5"><h2 class="text-3xl font-bold">نوع فعالیت</h2><p class="text-gray-600">نقش خود را در بازار مرغداری مشخص کنید.</p><div class="space-y-3"><button data-role="parent_farm" class="role-card w-full text-right p-4 bg-white border-2 border-gray-200 rounded-2xl">مزرعه مرغ مادر<br><span class="text-sm text-gray-500">تولیدکننده جوجه یک‌روزه گوشتی</span></button><button data-role="grow_out" class="role-card w-full text-right p-4 bg-white border-2 border-gray-200 rounded-2xl">واحد پرورش (مرغداری)<br><span class="text-sm text-gray-500">خرید جوجه و فروش مرغ زنده</span></button><button data-role="broker" class="role-card w-full text-right p-4 bg-white border-2 border-gray-200 rounded-2xl">واسطه و کارگزار<br><span class="text-sm text-gray-500">مدیریت معاملات و بازاررسانی</span></button></div><button id="save-profile" class="w-full h-14 bg-[#0d631b] text-white rounded-xl font-bold">ورود به جوجه بازار</button></section>
+</main>
+<script>
+const csrftoken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+let selectedRole = null;
+function showMessage(text, ok=false){const el=document.getElementById('message');el.textContent=text;el.className='rounded-xl p-3 text-sm '+(ok?'bg-green-100 text-green-800':'bg-red-100 text-red-800');}
+function nextStep(step){['phone-section','otp-section','profile-section'].forEach((id,i)=>{document.getElementById(id).classList.toggle('hidden', i!==step-1);document.getElementById(`step-${i+1}-dot`).className='h-2 rounded '+(i<step?'bg-[#0d631b]':'bg-gray-300');});}
+async function postJSON(url, payload){const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':csrftoken},body:JSON.stringify(payload)});const data=await res.json();if(!res.ok)throw new Error(data.error||'خطا در ارتباط با سرور');return data;}
+document.getElementById('request-otp').addEventListener('click', async()=>{try{const phone=document.getElementById('phone-input').value.trim();const data=await postJSON('{% url "accounts:request_otp" %}',{phone});showMessage(data.dev_code?`کد توسعه: ${data.dev_code}`:data.message,true);nextStep(2);}catch(e){showMessage(e.message);}});
+document.getElementById('verify-otp').addEventListener('click', async()=>{try{const phone=document.getElementById('phone-input').value.trim();const code=[...document.querySelectorAll('.otp-input')].map(i=>i.value).join('');await postJSON('{% url "accounts:verify_otp" %}',{phone,code});nextStep(3);}catch(e){showMessage(e.message);}});
+document.querySelectorAll('.role-card').forEach(btn=>btn.addEventListener('click',()=>{selectedRole=btn.dataset.role;document.querySelectorAll('.role-card').forEach(b=>b.classList.remove('border-[#0d631b]'));btn.classList.add('border-[#0d631b]');}));
+document.getElementById('save-profile').addEventListener('click', async()=>{try{if(!selectedRole)throw new Error('نوع فعالیت را انتخاب کنید.');const data=await postJSON('{% url "accounts:save_profile" %}',{role:selectedRole});window.location.href=data.redirect||'/';}catch(e){showMessage(e.message);}});
+document.querySelectorAll('.otp-input').forEach((input,idx,arr)=>input.addEventListener('input',()=>{if(input.value&&arr[idx+1])arr[idx+1].focus();}));
+</script>
+</body>
+</html>

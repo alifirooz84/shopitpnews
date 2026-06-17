@@ -1,11 +1,13 @@
 import csv
 
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Sum
 from django.http import HttpResponse, JsonResponse
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 
-from .models import Payment, Settlement
+from .models import Payment, Settlement, WalletTransaction
+from .services import get_wallet, top_up_wallet
 
 
 def health(request):
@@ -59,3 +61,26 @@ def financial_report_csv(request):
             settlement.created_at.isoformat(),
         ])
     return response
+
+
+@login_required
+def wallet(request):
+    user_wallet = get_wallet(request.user)
+    transactions = user_wallet.transactions.select_related("payment", "payment__order", "payment__order__listing")
+    return render(request, "payments/wallet.html", {"wallet": user_wallet, "transactions": transactions})
+
+
+@login_required
+def top_up(request):
+    if request.method != "POST":
+        return redirect("payments:wallet")
+    try:
+        amount = int(request.POST.get("amount") or 0)
+    except (TypeError, ValueError):
+        amount = 0
+    if amount <= 0:
+        messages.error(request, "مبلغ شارژ معتبر نیست.")
+        return redirect("payments:wallet")
+    top_up_wallet(request.user, amount)
+    messages.success(request, "کیف پول با موفقیت شارژ شد.")
+    return redirect("payments:wallet")

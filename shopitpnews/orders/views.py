@@ -10,6 +10,7 @@ from listings.models import Listing
 from notifications.models import Notification
 from notifications.services import notify_user
 from payments.models import Payment
+from payments.services import credit_refund
 
 from engagement.forms import ReviewForm
 
@@ -271,6 +272,7 @@ def cancel_order(request, pk):
         order.save(update_fields=["status", "updated_at"])
         order.payment.status = Payment.Status.REFUNDED
         order.payment.save(update_fields=["status", "updated_at"])
+        credit_refund(order.payment)
         listing.quantity += order.quantity
         if listing.status == Listing.Status.SOLD:
             listing.status = Listing.Status.ACTIVE

@@ -14,6 +14,7 @@ from listings.models import Listing, MarketPrice
 from orders.forms import DisputeMessageForm
 from orders.models import DisputeCase, DisputeMessage, Order
 from payments.models import Payment, Settlement
+from payments.services import credit_refund
 from notifications.models import MessageOutbox
 from notifications.services import broadcast_newsletter, notify_user
 
@@ -172,6 +173,7 @@ def resolve_dispute(request, pk):
             order.save(update_fields=["status", "updated_at"])
             order.payment.status = Payment.Status.REFUNDED
             order.payment.save(update_fields=["status", "updated_at"])
+            credit_refund(order.payment)
             listing.quantity += order.quantity
             if listing.status == Listing.Status.SOLD:
                 listing.status = Listing.Status.ACTIVE

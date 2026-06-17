@@ -1,0 +1,73 @@
+from django import forms
+from django.utils import timezone
+
+from .models import Listing
+
+
+class ListingForm(forms.ModelForm):
+    class Meta:
+        model = Listing
+        fields = (
+            "title",
+            "description",
+            "sale_type",
+            "breed",
+            "quantity",
+            "price_per_chick",
+            "province",
+            "city",
+            "delivery_date",
+            "health_status",
+            "parent_flock_age",
+            "hatch_rate_percent",
+            "egg_weight_grams",
+            "vaccination_status",
+            "image",
+            "image_url",
+        )
+        labels = {
+            "title": "عنوان آگهی",
+            "description": "توضیحات",
+            "sale_type": "نوع آگهی",
+            "breed": "نژاد یا واریته",
+            "quantity": "تعداد جوجه",
+            "price_per_chick": "قیمت هر قطعه",
+            "province": "استان",
+            "city": "شهر",
+            "delivery_date": "تاریخ تحویل",
+            "health_status": "وضعیت بهداشتی",
+            "parent_flock_age": "سن گله مادر",
+            "hatch_rate_percent": "درصد جوجه دهی",
+            "egg_weight_grams": "میانگین وزن تخم مرغ",
+            "vaccination_status": "وضعیت واکسیناسیون",
+            "image": "تصویر آگهی",
+            "image_url": "آدرس تصویر خارجی",
+        }
+        widgets = {
+            "description": forms.Textarea(attrs={"rows": 4}),
+            "delivery_date": forms.DateInput(attrs={"type": "date"}),
+            "image_url": forms.URLInput(attrs={"placeholder": "اختیاری، اگر فایل تصویر ندارید"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["image"].required = False
+        for field in self.fields.values():
+            field.widget.attrs.setdefault(
+                "class",
+                "w-full rounded-xl border-gray-300 bg-white px-4 py-3 focus:border-[#0d631b] focus:ring-[#0d631b]",
+            )
+
+    def clean_delivery_date(self):
+        delivery_date = self.cleaned_data["delivery_date"]
+        if delivery_date < timezone.localdate():
+            raise forms.ValidationError("تاریخ تحویل نمی‌تواند در گذشته باشد.")
+        return delivery_date
+
+    def clean(self):
+        cleaned = super().clean()
+        image = cleaned.get("image")
+        image_url = cleaned.get("image_url")
+        if image and image_url:
+            self.add_error("image_url", "وقتی فایل تصویر بارگذاری شده، آدرس تصویر خارجی لازم نیست.")
+        return cleaned

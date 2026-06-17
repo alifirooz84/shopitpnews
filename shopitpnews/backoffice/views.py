@@ -9,6 +9,7 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
+from accounts.models import VerificationRequest
 from listings.models import Listing, MarketPrice
 from orders.forms import DisputeMessageForm
 from orders.models import DisputeCase, DisputeMessage, Order
@@ -269,3 +270,54 @@ def newsletters(request):
         return redirect("backoffice:newsletters")
     outbox = MessageOutbox.objects.select_related("recipient")[:50]
     return render(request, "backoffice/newsletters.html", {"form": form, "outbox": outbox})
+
+
+@staff_member_required
+def verification_requests(request):
+    requests_qs = VerificationRequest.objects.select_related("applicant", "reviewed_by")
+    status = request.GET.get("status", "pending")
+    if status:
+        requests_qs = requests_qs.filter(status=status)
+    return render(request, "backoffice/verification_requests.html", {"requests": requests_qs, "status": status})
+
+
+@staff_member_required
+def verification_detail(request, pk):
+    verification = get_object_or_404(VerificationRequest.objects.select_related("applicant", "reviewed_by"), pk=pk)
+    return render(request, "backoffice/verification_detail.html", {"verification": verification})
+
+
+@staff_member_required
+@require_POST
+def review_verification(request, pk):
+    from django.utils import timezone
+
+    verification = get_object_or_404(VerificationRequest.objects.select_related("applicant"), pk=pk)
+    action = request.POST.get("action")
+    note = request.POST.get("review_note", "").strip()
+    if action == "approve":
+        verification.status = VerificationRequest.Status.APPROVED
+        verification.applicant.is_activity_verified = True
+        verification.applicant.is_phone_verified = True
+        verification.applicant.save(update_fields=["is_activity_verified", "is_phone_verified"])
+        title = "احراز هویت شما تأیید شد"
+        body = "مدارک شما بررسی و فعالیت شما در جوجه بازار تأیید شد."
+        level = "success"
+        messages.success(request, "درخواست احراز هویت تأیید شد.")
+    elif action == "reject":
+        verification.status = VerificationRequest.Status.REJECTED
+        verification.applicant.is_activity_verified = False
+        verification.applicant.save(update_fields=["is_activity_verified"])
+        title = "احراز هویت شما رد شد"
+        body = note or "مدارک ارسالی شما برای تأیید فعالیت کافی نبود."
+        level = "warning"
+        messages.warning(request, "درخواست احراز هویت رد شد.")
+    else:
+        messages.error(request, "عملیات معتبر نیست.")
+        return redirect("backoffice:verification_detail", pk=pk)
+    verification.review_note = note
+    verification.reviewed_by = request.user
+    verification.reviewed_at = timezone.now()
+    verification.save(update_fields=["status", "review_note", "reviewed_by", "reviewed_at"])
+    notify_user(verification.applicant, title, body, link_url="/accounts/verification/", level=level, queue_sms=True)
+    return redirect("backoffice:verification_requests")

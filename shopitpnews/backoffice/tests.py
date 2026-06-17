@@ -1,3 +1,4 @@
+from accounts.models import VerificationRequest
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
@@ -154,3 +155,42 @@ class NewsletterBackofficeTests(TestCase):
         self.assertTrue(Notification.objects.filter(recipient=self.user, title="خبر بازار").exists())
         self.assertTrue(MessageOutbox.objects.filter(recipient=self.user, channel=MessageOutbox.Channel.NEWSLETTER).exists())
         self.assertTrue(MessageOutbox.objects.filter(recipient=self.user, channel=MessageOutbox.Channel.SMS).exists())
+
+
+class VerificationBackofficeTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.staff = user_model.objects.create_user(username="verify-admin", phone="09128888000", is_staff=True)
+        self.user = user_model.objects.create_user(username="verify-applicant", phone="09128888001")
+        self.request_obj = VerificationRequest.objects.create(
+            applicant=self.user,
+            national_id="1234567890",
+            business_name="فارم احراز",
+            business_address="تهران ری",
+            document="verification-documents/doc.txt",
+        )
+
+    def test_staff_can_approve_verification(self):
+        self.client.force_login(self.staff)
+        response = self.client.post(
+            reverse("backoffice:review_verification", args=[self.request_obj.pk]),
+            {"action": "approve", "review_note": "ok"},
+        )
+        self.assertRedirects(response, reverse("backoffice:verification_requests"))
+        self.request_obj.refresh_from_db()
+        self.user.refresh_from_db()
+        self.assertEqual(self.request_obj.status, VerificationRequest.Status.APPROVED)
+        self.assertTrue(self.user.is_activity_verified)
+        self.assertTrue(self.user.is_phone_verified)
+
+    def test_staff_can_reject_verification(self):
+        self.client.force_login(self.staff)
+        response = self.client.post(
+            reverse("backoffice:review_verification", args=[self.request_obj.pk]),
+            {"action": "reject", "review_note": "مدرک ناخواناست"},
+        )
+        self.assertRedirects(response, reverse("backoffice:verification_requests"))
+        self.request_obj.refresh_from_db()
+        self.user.refresh_from_db()
+        self.assertEqual(self.request_obj.status, VerificationRequest.Status.REJECTED)
+        self.assertFalse(self.user.is_activity_verified)

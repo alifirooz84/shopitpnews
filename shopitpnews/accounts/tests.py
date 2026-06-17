@@ -53,3 +53,22 @@ class SellerProfileTests(TestCase):
         response = self.client.get(reverse("accounts:seller_profile", args=[seller.pk]))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "آگهی پروفایل فروشنده")
+
+
+class VerificationRequestTests(TestCase):
+    def test_user_can_submit_verification_request(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        user = User.objects.create_user(username="verify-user", phone="09129991111")
+        self.client.force_login(user)
+        document = SimpleUploadedFile("doc.txt", b"document", content_type="text/plain")
+        response = self.client.post(
+            reverse("accounts:verification"),
+            {
+                "national_id": "1234567890",
+                "business_name": "فارم تست",
+                "business_address": "مازندران آمل",
+                "document": document,
+            },
+        )
+        self.assertRedirects(response, reverse("accounts:verification"))
+        self.assertTrue(user.verification_requests.filter(business_name="فارم تست").exists())

@@ -13,8 +13,8 @@ from django.views.decorators.http import require_POST
 from listings.models import Listing
 from orders.models import Order
 
-from .forms import ProfileForm
-from .models import OtpCode, User
+from .forms import ProfileForm, VerificationRequestForm
+from .models import OtpCode, User, VerificationRequest
 
 PHONE_RE = re.compile(r"^09\d{9}$")
 
@@ -105,3 +105,23 @@ def seller_profile(request, pk):
         "buyers_count": completed_orders.values("buyer").distinct().count(),
     }
     return render(request, "accounts/seller_profile.html", {"seller": seller, "listings": listings, "stats": stats})
+
+
+@login_required
+def verification_request(request):
+    latest_request = request.user.verification_requests.first()
+    if request.method == "POST":
+        form = VerificationRequestForm(request.POST, request.FILES)
+        if form.is_valid():
+            verification = form.save(commit=False)
+            verification.applicant = request.user
+            verification.save()
+            messages.success(request, "درخواست احراز هویت شما ثبت شد و در صف بررسی مدیر قرار گرفت.")
+            return redirect("accounts:verification")
+    else:
+        initial = {
+            "business_name": request.user.get_full_name() or request.user.username,
+            "business_address": f"{request.user.province} {request.user.city}".strip(),
+        }
+        form = VerificationRequestForm(initial=initial)
+    return render(request, "accounts/verification.html", {"form": form, "latest_request": latest_request})

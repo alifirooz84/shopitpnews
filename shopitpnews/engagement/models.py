@@ -52,3 +52,18 @@ class ConversationMessage(models.Model):
 
     def __str__(self):
         return f"پیام مکالمه #{self.conversation_id}"
+
+
+class Review(models.Model):
+    order = models.OneToOneField("orders.Order", on_delete=models.CASCADE, related_name="review")
+    reviewer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="given_reviews")
+    seller = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="received_reviews")
+    rating = models.PositiveSmallIntegerField()
+    comment = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.seller} - {self.rating}"

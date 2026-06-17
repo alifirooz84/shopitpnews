@@ -5,11 +5,12 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from listings.models import Listing
+from orders.models import Order
 from notifications.models import Notification
 from notifications.services import notify_user
 
-from .forms import ConversationMessageForm
-from .models import Conversation, ConversationMessage, FavoriteListing
+from .forms import ConversationMessageForm, ReviewForm
+from .models import Conversation, ConversationMessage, FavoriteListing, Review
 
 
 @login_required
@@ -103,3 +104,35 @@ def add_message(request, pk):
     else:
         messages.error(request, "متن پیام معتبر نیست.")
     return redirect(conversation.get_absolute_url())
+
+
+@login_required
+@require_POST
+def create_review(request, order_id):
+    order = get_object_or_404(
+        Order.objects.select_related("listing", "listing__seller"),
+        pk=order_id,
+        buyer=request.user,
+        status=Order.Status.DELIVERED,
+    )
+    if hasattr(order, "review"):
+        messages.warning(request, "برای این سفارش قبلاً نظر ثبت کرده‌اید.")
+        return redirect("orders:detail", pk=order.pk)
+    form = ReviewForm(request.POST)
+    if form.is_valid():
+        review = form.save(commit=False)
+        review.order = order
+        review.reviewer = request.user
+        review.seller = order.listing.seller
+        review.save()
+        notify_user(
+            review.seller,
+            "نظر جدید برای معامله",
+            f"خریدار سفارش #{order.pk} برای شما امتیاز {review.rating} ثبت کرد.",
+            link_url=f"/accounts/sellers/{review.seller_id}/",
+            level=Notification.Level.SUCCESS,
+        )
+        messages.success(request, "نظر شما برای فروشنده ثبت شد.")
+    else:
+        messages.error(request, "امتیاز یا متن نظر معتبر نیست.")
+    return redirect("orders:detail", pk=order.pk)

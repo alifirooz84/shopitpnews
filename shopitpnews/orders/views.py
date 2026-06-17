@@ -11,6 +11,8 @@ from notifications.models import Notification
 from notifications.services import notify_user
 from payments.models import Payment
 
+from engagement.forms import ReviewForm
+
 from .forms import DisputeCaseForm, DisputeMessageForm, PurchaseOfferForm
 from .models import DisputeCase, DisputeMessage, Order, PurchaseOffer
 
@@ -46,6 +48,8 @@ def order_detail(request, pk):
             "dispute": dispute,
             "dispute_form": DisputeCaseForm(),
             "message_form": DisputeMessageForm(),
+            "review_form": ReviewForm(),
+            "existing_review": getattr(order, "review", None),
         },
     )
 

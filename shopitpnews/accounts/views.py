@@ -5,7 +5,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import get_user_model, login
 from django.contrib.auth.decorators import login_required
-from django.db.models import Count, Sum
+from django.db.models import Avg, Count, Sum
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
@@ -98,13 +98,16 @@ def seller_profile(request, pk):
     seller = get_object_or_404(get_user_model(), pk=pk, is_active=True)
     listings = seller.listings.filter(status=Listing.Status.ACTIVE)
     completed_orders = Order.objects.filter(listing__seller=seller, status=Order.Status.DELIVERED)
+    reviews = seller.received_reviews.select_related("reviewer", "order", "order__listing")
     stats = {
         "active_listings": listings.count(),
         "completed_orders": completed_orders.count(),
         "total_volume": completed_orders.aggregate(total=Sum("quantity"))["total"] or 0,
         "buyers_count": completed_orders.values("buyer").distinct().count(),
+        "average_rating": reviews.aggregate(avg=Avg("rating"))["avg"] or 0,
+        "reviews_count": reviews.count(),
     }
-    return render(request, "accounts/seller_profile.html", {"seller": seller, "listings": listings, "stats": stats})
+    return render(request, "accounts/seller_profile.html", {"seller": seller, "listings": listings, "stats": stats, "reviews": reviews[:10]})
 
 
 @login_required

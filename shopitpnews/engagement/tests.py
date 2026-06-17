@@ -5,9 +5,10 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from engagement.models import Conversation, ConversationMessage, FavoriteListing
+from engagement.models import Conversation, ConversationMessage, FavoriteListing, Review
 from listings.models import Listing
 from notifications.models import Notification
+from orders.models import Order
 
 
 class EngagementTests(TestCase):
@@ -68,3 +69,59 @@ class EngagementTests(TestCase):
         self.client.force_login(other)
         response = self.client.get(reverse("engagement:conversation_detail", args=[conversation.pk]))
         self.assertEqual(response.status_code, 404)
+
+
+class ReviewTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.seller = user_model.objects.create_user(username="review-seller", phone="09123100001")
+        self.buyer = user_model.objects.create_user(username="review-buyer", phone="09123100002")
+        self.listing = Listing.objects.create(
+            seller=self.seller,
+            title="آگهی نظر",
+            breed="راس ۳۰۸",
+            quantity=10,
+            price_per_chick=1000,
+            province="تهران",
+            city="ری",
+            delivery_date=timezone.localdate() + timedelta(days=1),
+        )
+        self.order = Order.objects.create(
+            buyer=self.buyer,
+            listing=self.listing,
+            order_type=Order.OrderType.INSTANT,
+            status=Order.Status.DELIVERED,
+            quantity=2,
+            unit_price=1000,
+            total_amount=2000,
+        )
+
+    def test_buyer_can_review_delivered_order(self):
+        self.client.force_login(self.buyer)
+        response = self.client.post(
+            reverse("engagement:create_review", args=[self.order.pk]),
+            {"rating": 5, "comment": "فروشنده خوش‌قول بود."},
+        )
+        self.assertRedirects(response, reverse("orders:detail", args=[self.order.pk]))
+        review = Review.objects.get(order=self.order)
+        self.assertEqual(review.seller, self.seller)
+        self.assertEqual(review.rating, 5)
+        self.assertTrue(Notification.objects.filter(recipient=self.seller, title__icontains="نظر جدید").exists())
+
+    def test_buyer_cannot_review_twice(self):
+        Review.objects.create(order=self.order, reviewer=self.buyer, seller=self.seller, rating=4)
+        self.client.force_login(self.buyer)
+        response = self.client.post(reverse("engagement:create_review", args=[self.order.pk]), {"rating": 5})
+        self.assertRedirects(response, reverse("orders:detail", args=[self.order.pk]))
+        self.assertEqual(Review.objects.filter(order=self.order).count(), 1)
+
+    def test_non_buyer_cannot_review_order(self):
+        self.client.force_login(self.seller)
+        response = self.client.post(reverse("engagement:create_review", args=[self.order.pk]), {"rating": 5})
+        self.assertEqual(response.status_code, 404)
+
+    def test_seller_profile_shows_review_stats(self):
+        Review.objects.create(order=self.order, reviewer=self.buyer, seller=self.seller, rating=5, comment="عالی")
+        response = self.client.get(reverse("accounts:seller_profile", args=[self.seller.pk]))
+        self.assertContains(response, "5.0")
+        self.assertContains(response, "عالی")

@@ -11,4 +11,5 @@ urlpatterns = [
     path("conversations/<int:pk>/", views.conversation_detail, name="conversation_detail"),
     path("conversations/<int:pk>/message/", views.add_message, name="add_message"),
     path("listings/<int:listing_id>/contact/", views.contact_seller, name="contact_seller"),
+    path("reviews/orders/<int:order_id>/", views.create_review, name="create_review"),
 ]

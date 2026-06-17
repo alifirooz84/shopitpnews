@@ -42,10 +42,10 @@
 <div class="fixed bottom-0 inset-x-0 bg-white shadow-2xl p-4">
   {% if listing.status == 'active' and listing.quantity > 0 %}
   <form method="post" action="{% url 'orders:create' listing.id %}" class="max-w-6xl mx-auto flex flex-col sm:flex-row gap-3 items-center">{% csrf_token %}
-    <input name="quantity" type="number" min="1" max="{{ listing.quantity }}" value="1" class="w-full sm:w-32 rounded-xl border-gray-300"/>
+    <input name="quantity" type="number" min="1" max="{{ listing.quantity }}" value="1" class="w-full sm:w-32 rounded-xl border-gray-300"/><input name="proposed_unit_price" type="number" min="1" value="{{ listing.price_per_chick }}" class="w-full sm:w-40 rounded-xl border-gray-300" placeholder="قیمت پیشنهادی"/>
     <button name="order_type" value="instant" class="w-full bg-[#0d631b] text-white rounded-xl py-3 font-bold">خرید آنی</button>
     <button name="order_type" value="preorder" class="w-full bg-[#005db7] text-white rounded-xl py-3 font-bold">پیش‌خرید</button>
-    <button name="order_type" value="offer" class="w-full border-2 border-[#0d631b] text-[#0d631b] rounded-xl py-3 font-bold">پیشنهاد قیمت</button>
+    <button formaction="{% url 'orders:create_offer' listing.id %}" name="order_type" value="offer" class="w-full border-2 border-[#0d631b] text-[#0d631b] rounded-xl py-3 font-bold">پیشنهاد قیمت</button>
   </form>
   {% else %}
     <div class="max-w-6xl mx-auto rounded-xl bg-gray-100 p-4 text-center text-gray-600">این آگهی در حال حاضر موجودی قابل سفارش ندارد.</div>

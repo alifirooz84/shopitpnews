@@ -1,6 +1,7 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
+from django.utils import timezone
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
@@ -10,8 +11,8 @@ from notifications.models import Notification
 from notifications.services import notify_user
 from payments.models import Payment
 
-from .forms import DisputeCaseForm, DisputeMessageForm
-from .models import DisputeCase, DisputeMessage, Order
+from .forms import DisputeCaseForm, DisputeMessageForm, PurchaseOfferForm
+from .models import DisputeCase, DisputeMessage, Order, PurchaseOffer
 
 
 def _orders_for_user(user):
@@ -109,6 +110,121 @@ def create_order(request, listing_id):
     )
     messages.success(request, "سفارش ثبت شد و مبلغ در وضعیت پرداخت امن قرار گرفت.")
     return redirect("orders:detail", pk=order.pk)
+
+
+@login_required
+def offer_list(request):
+    sent_offers = request.user.purchase_offers.select_related("listing", "listing__seller", "created_order")
+    received_offers = PurchaseOffer.objects.select_related("buyer", "listing", "created_order").filter(listing__seller=request.user)
+    return render(request, "orders/offer_list.html", {"sent_offers": sent_offers, "received_offers": received_offers})
+
+
+@login_required
+def offer_detail(request, pk):
+    offer = get_object_or_404(
+        PurchaseOffer.objects.select_related("buyer", "listing", "listing__seller", "created_order"),
+        Q(pk=pk) & (Q(buyer=request.user) | Q(listing__seller=request.user)),
+    )
+    return render(request, "orders/offer_detail.html", {"offer": offer})
+
+
+@login_required
+@require_POST
+def create_offer(request, listing_id):
+    listing = get_object_or_404(Listing.objects.select_related("seller"), pk=listing_id, status=Listing.Status.ACTIVE)
+    if listing.seller_id == request.user.id:
+        messages.error(request, "برای آگهی خودتان نمی‌توانید پیشنهاد قیمت ثبت کنید.")
+        return redirect(listing.get_absolute_url())
+    form = PurchaseOfferForm(request.POST, max_quantity=listing.quantity)
+    if not form.is_valid():
+        messages.error(request, "اطلاعات پیشنهاد قیمت معتبر نیست.")
+        return redirect(listing.get_absolute_url())
+    offer = form.save(commit=False)
+    offer.buyer = request.user
+    offer.listing = listing
+    offer.save()
+    notify_user(
+        listing.seller,
+        "پیشنهاد قیمت جدید",
+        f"برای آگهی {listing.title} پیشنهاد {offer.quantity} قطعه با قیمت {offer.proposed_unit_price} تومان ثبت شد.",
+        link_url=offer.get_absolute_url(),
+        level=Notification.Level.INFO,
+        queue_sms=True,
+    )
+    notify_user(request.user, "پیشنهاد شما ثبت شد", f"پیشنهاد قیمت برای آگهی {listing.title} ثبت شد و در انتظار پاسخ فروشنده است.", link_url=offer.get_absolute_url(), level=Notification.Level.SUCCESS)
+    messages.success(request, "پیشنهاد قیمت ثبت شد و برای فروشنده ارسال شد.")
+    return redirect(offer.get_absolute_url())
+
+
+@login_required
+@require_POST
+def accept_offer(request, pk):
+    with transaction.atomic():
+        offer = get_object_or_404(
+            PurchaseOffer.objects.select_for_update().select_related("buyer", "listing", "listing__seller"),
+            pk=pk,
+            listing__seller=request.user,
+            status=PurchaseOffer.Status.PENDING,
+        )
+        listing = Listing.objects.select_for_update().get(pk=offer.listing_id)
+        if listing.status != Listing.Status.ACTIVE or listing.quantity < offer.quantity:
+            messages.error(request, "موجودی آگهی برای پذیرش این پیشنهاد کافی نیست.")
+            return redirect(offer.get_absolute_url())
+        order = Order.objects.create(
+            buyer=offer.buyer,
+            listing=listing,
+            order_type=Order.OrderType.OFFER,
+            status=Order.Status.PAID_HELD,
+            quantity=offer.quantity,
+            unit_price=offer.proposed_unit_price,
+            total_amount=offer.total_amount,
+        )
+        Payment.objects.create(order=order, amount=order.total_amount)
+        listing.quantity -= offer.quantity
+        if listing.quantity == 0:
+            listing.status = Listing.Status.SOLD
+            listing.reservation_percent = 100
+        else:
+            listing.reservation_percent = min(99, listing.reservation_percent + 10)
+        listing.save(update_fields=["quantity", "status", "reservation_percent", "updated_at"])
+        offer.status = PurchaseOffer.Status.ACCEPTED
+        offer.created_order = order
+        offer.seller_note = request.POST.get("seller_note", "").strip()
+        offer.responded_at = timezone.now()
+        offer.save(update_fields=["status", "created_order", "seller_note", "responded_at", "updated_at"])
+    notify_user(offer.buyer, "پیشنهاد قیمت پذیرفته شد", f"پیشنهاد شما برای آگهی {offer.listing.title} پذیرفته شد و سفارش #{order.pk} با پرداخت امن ایجاد شد.", link_url=order.get_absolute_url() if hasattr(order, 'get_absolute_url') else f"/orders/{order.pk}/", level=Notification.Level.SUCCESS, queue_sms=True)
+    messages.success(request, "پیشنهاد پذیرفته شد و سفارش پرداخت امن ایجاد شد.")
+    return redirect("orders:detail", pk=order.pk)
+
+
+@login_required
+@require_POST
+def reject_offer(request, pk):
+    offer = get_object_or_404(
+        PurchaseOffer.objects.select_related("buyer", "listing"),
+        pk=pk,
+        listing__seller=request.user,
+        status=PurchaseOffer.Status.PENDING,
+    )
+    offer.status = PurchaseOffer.Status.REJECTED
+    offer.seller_note = request.POST.get("seller_note", "").strip()
+    offer.responded_at = timezone.now()
+    offer.save(update_fields=["status", "seller_note", "responded_at", "updated_at"])
+    notify_user(offer.buyer, "پیشنهاد قیمت رد شد", f"پیشنهاد شما برای آگهی {offer.listing.title} رد شد.", link_url=offer.get_absolute_url(), level=Notification.Level.WARNING)
+    messages.success(request, "پیشنهاد رد شد.")
+    return redirect(offer.get_absolute_url())
+
+
+@login_required
+@require_POST
+def cancel_offer(request, pk):
+    offer = get_object_or_404(PurchaseOffer, pk=pk, buyer=request.user, status=PurchaseOffer.Status.PENDING)
+    offer.status = PurchaseOffer.Status.CANCELLED
+    offer.responded_at = timezone.now()
+    offer.save(update_fields=["status", "responded_at", "updated_at"])
+    notify_user(offer.listing.seller, "پیشنهاد قیمت لغو شد", f"پیشنهاد ثبت‌شده برای آگهی {offer.listing.title} توسط خریدار لغو شد.", link_url=offer.get_absolute_url(), level=Notification.Level.WARNING)
+    messages.success(request, "پیشنهاد قیمت لغو شد.")
+    return redirect(offer.get_absolute_url())
 
 
 @login_required

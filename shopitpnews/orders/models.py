@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.urls import reverse
 
 
 class Order(models.Model):
@@ -46,6 +47,43 @@ class Order(models.Model):
     @property
     def can_confirm_delivery(self):
         return self.status == self.Status.PAID_HELD
+
+
+class PurchaseOffer(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending", "در انتظار پاسخ"
+        ACCEPTED = "accepted", "پذیرفته شده"
+        REJECTED = "rejected", "رد شده"
+        CANCELLED = "cancelled", "لغو شده"
+
+    buyer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="purchase_offers")
+    listing = models.ForeignKey("listings.Listing", on_delete=models.PROTECT, related_name="purchase_offers")
+    quantity = models.PositiveIntegerField()
+    proposed_unit_price = models.PositiveIntegerField()
+    message = models.TextField(blank=True)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
+    created_order = models.OneToOneField(Order, on_delete=models.SET_NULL, null=True, blank=True, related_name="source_offer")
+    seller_note = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    responded_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"پیشنهاد #{self.pk} - {self.listing}"
+
+    @property
+    def total_amount(self):
+        return self.quantity * self.proposed_unit_price
+
+    @property
+    def is_pending(self):
+        return self.status == self.Status.PENDING
+
+    def get_absolute_url(self):
+        return reverse("orders:offer_detail", kwargs={"pk": self.pk})
 
 
 class DisputeCase(models.Model):

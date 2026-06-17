@@ -8,7 +8,7 @@ from django.utils import timezone
 from listings.models import Listing
 from payments.models import Payment
 
-from .models import DisputeCase, DisputeMessage, Order
+from .models import DisputeCase, DisputeMessage, Order, PurchaseOffer
 
 
 class OrderFlowTests(TestCase):
@@ -104,3 +104,77 @@ class OrderFlowTests(TestCase):
         response = self.client.get(reverse("orders:detail", args=[order.pk]))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "جزئیات سفارش")
+
+
+class PurchaseOfferFlowTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.seller = user_model.objects.create_user(username="offer-seller", phone="09121110001")
+        self.buyer = user_model.objects.create_user(username="offer-buyer", phone="09121110002")
+        self.listing = Listing.objects.create(
+            seller=self.seller,
+            title="آگهی پیشنهاد",
+            breed="راس ۳۰۸",
+            quantity=20,
+            price_per_chick=20000,
+            province="تهران",
+            city="ری",
+            delivery_date=timezone.localdate() + timedelta(days=1),
+        )
+
+    def test_buyer_can_create_purchase_offer(self):
+        self.client.force_login(self.buyer)
+        response = self.client.post(
+            reverse("orders:create_offer", args=[self.listing.pk]),
+            {"quantity": 5, "proposed_unit_price": 18000, "message": "اگر موافقید سریع خرید می‌کنم."},
+        )
+        offer = PurchaseOffer.objects.get()
+        self.assertRedirects(response, offer.get_absolute_url())
+        self.assertEqual(offer.total_amount, 90000)
+        self.assertEqual(offer.status, PurchaseOffer.Status.PENDING)
+
+    def test_seller_accepts_offer_creates_order_and_payment(self):
+        offer = PurchaseOffer.objects.create(
+            buyer=self.buyer,
+            listing=self.listing,
+            quantity=4,
+            proposed_unit_price=17000,
+        )
+        self.client.force_login(self.seller)
+        response = self.client.post(reverse("orders:accept_offer", args=[offer.pk]), {"seller_note": "قبول"})
+        order = Order.objects.get(order_type=Order.OrderType.OFFER)
+        self.assertRedirects(response, reverse("orders:detail", args=[order.pk]))
+        offer.refresh_from_db()
+        self.listing.refresh_from_db()
+        self.assertEqual(offer.status, PurchaseOffer.Status.ACCEPTED)
+        self.assertEqual(offer.created_order, order)
+        self.assertEqual(order.unit_price, 17000)
+        self.assertEqual(order.total_amount, 68000)
+        self.assertEqual(order.payment.status, Payment.Status.HELD)
+        self.assertEqual(self.listing.quantity, 16)
+
+    def test_seller_rejects_offer(self):
+        offer = PurchaseOffer.objects.create(buyer=self.buyer, listing=self.listing, quantity=2, proposed_unit_price=15000)
+        self.client.force_login(self.seller)
+        response = self.client.post(reverse("orders:reject_offer", args=[offer.pk]), {"seller_note": "کم است"})
+        self.assertRedirects(response, offer.get_absolute_url())
+        offer.refresh_from_db()
+        self.assertEqual(offer.status, PurchaseOffer.Status.REJECTED)
+        self.assertEqual(offer.seller_note, "کم است")
+
+    def test_buyer_can_cancel_pending_offer(self):
+        offer = PurchaseOffer.objects.create(buyer=self.buyer, listing=self.listing, quantity=2, proposed_unit_price=15000)
+        self.client.force_login(self.buyer)
+        response = self.client.post(reverse("orders:cancel_offer", args=[offer.pk]))
+        self.assertRedirects(response, offer.get_absolute_url())
+        offer.refresh_from_db()
+        self.assertEqual(offer.status, PurchaseOffer.Status.CANCELLED)
+
+    def test_offer_cannot_exceed_inventory(self):
+        self.client.force_login(self.buyer)
+        response = self.client.post(
+            reverse("orders:create_offer", args=[self.listing.pk]),
+            {"quantity": 99, "proposed_unit_price": 18000},
+        )
+        self.assertRedirects(response, self.listing.get_absolute_url())
+        self.assertFalse(PurchaseOffer.objects.exists())

@@ -10,5 +10,6 @@ urlpatterns = [
     path("<int:pk>/confirm-delivery/", views.confirm_delivery, name="confirm_delivery"),
     path("<int:pk>/cancel/", views.cancel_order, name="cancel"),
     path("<int:pk>/dispute/", views.report_dispute, name="dispute"),
+    path("disputes/<int:pk>/message/", views.add_dispute_message, name="add_dispute_message"),
     path("listings/<int:listing_id>/create/", views.create_order, name="create"),
 ]

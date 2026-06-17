@@ -6,7 +6,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from listings.models import Listing, MarketPrice
-from orders.models import Order
+from orders.models import DisputeCase, DisputeMessage, Order
 from payments.models import Payment, Settlement
 from notifications.models import MessageOutbox, Notification
 
@@ -37,6 +37,7 @@ class BackofficeTests(TestCase):
             total_amount=2000,
         )
         self.payment = Payment.objects.create(order=self.order, amount=2000)
+        self.dispute = DisputeCase.objects.create(order=self.order, opened_by=self.buyer, reason=DisputeCase.Reason.QUALITY, description="کیفیت مشکل دارد")
 
     def test_backoffice_requires_staff(self):
         response = self.client.get(reverse("backoffice:overview"))
@@ -58,9 +59,16 @@ class BackofficeTests(TestCase):
         self.buyer.refresh_from_db()
         self.assertTrue(self.buyer.is_phone_verified)
 
+
+    def test_staff_can_add_dispute_message(self):
+        self.client.force_login(self.staff)
+        response = self.client.post(reverse("backoffice:add_dispute_message", args=[self.dispute.pk]), {"body": "پیام مدیر"})
+        self.assertRedirects(response, reverse("backoffice:dispute_detail", args=[self.dispute.pk]))
+        self.assertTrue(DisputeMessage.objects.filter(dispute=self.dispute, body="پیام مدیر", is_staff_note=True).exists())
+
     def test_staff_can_release_disputed_payment(self):
         self.client.force_login(self.staff)
-        response = self.client.post(reverse("backoffice:resolve_dispute", args=[self.order.pk]), {"resolution": "release"})
+        response = self.client.post(reverse("backoffice:resolve_dispute", args=[self.dispute.pk]), {"resolution": "release"})
         self.assertRedirects(response, reverse("backoffice:disputes"))
         self.order.refresh_from_db()
         self.payment.refresh_from_db()
@@ -69,7 +77,7 @@ class BackofficeTests(TestCase):
 
     def test_staff_can_refund_disputed_payment_and_restore_inventory(self):
         self.client.force_login(self.staff)
-        response = self.client.post(reverse("backoffice:resolve_dispute", args=[self.order.pk]), {"resolution": "refund"})
+        response = self.client.post(reverse("backoffice:resolve_dispute", args=[self.dispute.pk]), {"resolution": "refund"})
         self.assertRedirects(response, reverse("backoffice:disputes"))
         self.order.refresh_from_db()
         self.payment.refresh_from_db()

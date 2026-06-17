@@ -10,7 +10,8 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from listings.models import Listing, MarketPrice
-from orders.models import Order
+from orders.forms import DisputeMessageForm
+from orders.models import DisputeCase, DisputeMessage, Order
 from payments.models import Payment, Settlement
 from notifications.models import MessageOutbox
 from notifications.services import broadcast_newsletter, notify_user
@@ -100,34 +101,67 @@ def user_action(request, pk):
 
 @staff_member_required
 def disputes(request):
-    orders = Order.objects.select_related("buyer", "listing", "listing__seller", "payment").filter(
-        status=Order.Status.DISPUTED
-    )
-    return render(request, "backoffice/disputes.html", {"orders": orders})
+    cases = DisputeCase.objects.select_related(
+        "order", "order__buyer", "order__listing", "order__listing__seller", "order__payment", "opened_by"
+    ).filter(status=DisputeCase.Status.OPEN)
+    return render(request, "backoffice/disputes.html", {"cases": cases})
 
 
 @staff_member_required
 def dispute_detail(request, pk):
-    order = get_object_or_404(
-        Order.objects.select_related("buyer", "listing", "listing__seller", "payment"), pk=pk
+    dispute = get_object_or_404(
+        DisputeCase.objects.select_related(
+            "order", "order__buyer", "order__listing", "order__listing__seller", "order__payment", "opened_by"
+        ).prefetch_related("messages", "messages__author"),
+        pk=pk,
     )
-    return render(request, "backoffice/dispute_detail.html", {"order": order})
+    return render(request, "backoffice/dispute_detail.html", {"dispute": dispute, "order": dispute.order, "message_form": DisputeMessageForm()})
+
+
+@staff_member_required
+@require_POST
+def add_dispute_message(request, pk):
+    dispute = get_object_or_404(DisputeCase.objects.select_related("order"), pk=pk, status=DisputeCase.Status.OPEN)
+    form = DisputeMessageForm(request.POST, request.FILES)
+    if form.is_valid():
+        message = form.save(commit=False)
+        message.dispute = dispute
+        message.author = request.user
+        message.is_staff_note = True
+        message.save()
+        notify_user(dispute.order.buyer, "پیام مدیر در پرونده اختلاف", f"برای سفارش #{dispute.order_id} پیام جدید ثبت شد.", link_url=f"/orders/{dispute.order_id}/", level="info")
+        notify_user(dispute.order.listing.seller, "پیام مدیر در پرونده اختلاف", f"برای سفارش #{dispute.order_id} پیام جدید ثبت شد.", link_url=f"/orders/{dispute.order_id}/", level="info")
+        messages.success(request, "پیام مدیر ثبت شد.")
+    else:
+        messages.error(request, "متن پیام معتبر نیست.")
+    return redirect("backoffice:dispute_detail", pk=pk)
 
 
 @staff_member_required
 @require_POST
 def resolve_dispute(request, pk):
     resolution = request.POST.get("resolution")
+    resolution_note = request.POST.get("resolution_note", "").strip()
     with transaction.atomic():
-        order = get_object_or_404(
-            Order.objects.select_related("payment", "listing").select_for_update(), pk=pk, status=Order.Status.DISPUTED
+        dispute = get_object_or_404(
+            DisputeCase.objects.select_related("order", "order__payment", "order__listing").select_for_update(),
+            pk=pk,
+            status=DisputeCase.Status.OPEN,
         )
+        order = dispute.order
         if resolution == "release":
             order.status = Order.Status.DELIVERED
             order.save(update_fields=["status", "updated_at"])
             order.payment.status = Payment.Status.RELEASED
             order.payment.save(update_fields=["status", "updated_at"])
             settlement = order.payment.create_settlement()
+            dispute.status = DisputeCase.Status.RELEASED
+            dispute.resolved_by = request.user
+            dispute.resolution_note = resolution_note or "اختلاف به نفع فروشنده بسته شد و وجه آزاد شد."
+            from django.utils import timezone
+            dispute.resolved_at = timezone.now()
+            dispute.save(update_fields=["status", "resolved_by", "resolution_note", "resolved_at", "updated_at"])
+            DisputeMessage.objects.create(dispute=dispute, author=request.user, body=dispute.resolution_note, is_staff_note=True)
             notify_user(order.listing.seller, "اختلاف به نفع شما بسته شد", f"وجه سفارش #{order.pk} آزاد شد و مبلغ خالص {settlement.net_amount if settlement else order.payment.seller_amount} تومان در دفتر تسویه ثبت شد.", link_url="/payments/reports/", level="success", queue_sms=True)
             notify_user(order.buyer, "اختلاف سفارش بسته شد", f"اختلاف سفارش #{order.pk} بررسی و وجه برای فروشنده آزاد شد.", link_url=f"/orders/{order.pk}/", level="info")
             messages.success(request, "اختلاف به نفع فروشنده بسته شد و وجه آزاد شد.")
@@ -142,6 +176,13 @@ def resolve_dispute(request, pk):
                 listing.status = Listing.Status.ACTIVE
             listing.reservation_percent = max(0, listing.reservation_percent - 10)
             listing.save(update_fields=["quantity", "status", "reservation_percent", "updated_at"])
+            dispute.status = DisputeCase.Status.REFUNDED
+            dispute.resolved_by = request.user
+            dispute.resolution_note = resolution_note or "اختلاف به نفع خریدار بسته شد و وجه بازگشت خورد."
+            from django.utils import timezone
+            dispute.resolved_at = timezone.now()
+            dispute.save(update_fields=["status", "resolved_by", "resolution_note", "resolved_at", "updated_at"])
+            DisputeMessage.objects.create(dispute=dispute, author=request.user, body=dispute.resolution_note, is_staff_note=True)
             notify_user(order.buyer, "اختلاف به نفع شما بسته شد", f"وجه سفارش #{order.pk} در وضعیت بازگشت قرار گرفت.", link_url=f"/orders/{order.pk}/", level="success", queue_sms=True)
             notify_user(order.listing.seller, "اختلاف سفارش بسته شد", f"اختلاف سفارش #{order.pk} به بازگشت وجه منجر شد.", link_url=f"/orders/{order.pk}/", level="warning")
             messages.success(request, "اختلاف به نفع خریدار بسته شد و وجه بازگشت خورد.")

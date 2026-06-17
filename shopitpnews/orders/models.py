@@ -46,3 +46,56 @@ class Order(models.Model):
     @property
     def can_confirm_delivery(self):
         return self.status == self.Status.PAID_HELD
+
+
+class DisputeCase(models.Model):
+    class Reason(models.TextChoices):
+        DELAY = "delay", "تأخیر در تحویل"
+        QUALITY = "quality", "مغایرت کیفیت/سلامت"
+        QUANTITY = "quantity", "مغایرت تعداد"
+        CANCELLATION = "cancellation", "لغو یک‌طرفه"
+        OTHER = "other", "سایر موارد"
+
+    class Status(models.TextChoices):
+        OPEN = "open", "در حال بررسی"
+        RELEASED = "released", "مختومه با تسویه فروشنده"
+        REFUNDED = "refunded", "مختومه با بازگشت وجه"
+
+    order = models.OneToOneField(Order, on_delete=models.CASCADE, related_name="dispute_case")
+    opened_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="opened_disputes")
+    reason = models.CharField(max_length=24, choices=Reason.choices, default=Reason.OTHER)
+    description = models.TextField(blank=True)
+    evidence = models.FileField(upload_to="dispute-evidence/", blank=True)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.OPEN)
+    resolution_note = models.TextField(blank=True)
+    resolved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="resolved_disputes",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"اختلاف سفارش #{self.order_id}"
+
+
+class DisputeMessage(models.Model):
+    dispute = models.ForeignKey(DisputeCase, on_delete=models.CASCADE, related_name="messages")
+    author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="dispute_messages")
+    body = models.TextField()
+    attachment = models.FileField(upload_to="dispute-messages/", blank=True)
+    is_staff_note = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"پیام اختلاف #{self.dispute_id}"

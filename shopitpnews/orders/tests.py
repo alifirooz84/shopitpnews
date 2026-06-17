@@ -8,7 +8,7 @@ from django.utils import timezone
 from listings.models import Listing
 from payments.models import Payment
 
-from .models import Order
+from .models import DisputeCase, DisputeMessage, Order
 
 
 class OrderFlowTests(TestCase):
@@ -69,14 +69,33 @@ class OrderFlowTests(TestCase):
         self.assertEqual(order.payment.status, Payment.Status.REFUNDED)
         self.assertEqual(self.listing.quantity, 10)
 
-    def test_dispute_keeps_payment_held(self):
+    def test_dispute_creates_case_and_keeps_payment_held(self):
         self._create_order(quantity=1)
         order = Order.objects.get()
-        response = self.client.post(reverse("orders:dispute", args=[order.pk]))
+        response = self.client.post(
+            reverse("orders:dispute", args=[order.pk]),
+            {"reason": DisputeCase.Reason.QUALITY, "description": "کیفیت تحویل مغایرت دارد."},
+        )
         self.assertRedirects(response, reverse("orders:detail", args=[order.pk]))
         order.refresh_from_db()
         self.assertEqual(order.status, Order.Status.DISPUTED)
         self.assertEqual(order.payment.status, Payment.Status.HELD)
+        self.assertEqual(order.dispute_case.reason, DisputeCase.Reason.QUALITY)
+        self.assertTrue(order.dispute_case.messages.filter(body__icontains="کیفیت").exists())
+
+    def test_dispute_message_can_be_added_by_party(self):
+        self._create_order(quantity=1)
+        order = Order.objects.get()
+        self.client.post(
+            reverse("orders:dispute", args=[order.pk]),
+            {"reason": DisputeCase.Reason.DELAY, "description": "تأخیر دارد."},
+        )
+        response = self.client.post(
+            reverse("orders:add_dispute_message", args=[order.dispute_case.pk]),
+            {"body": "توضیح تکمیلی"},
+        )
+        self.assertRedirects(response, reverse("orders:detail", args=[order.pk]))
+        self.assertTrue(DisputeMessage.objects.filter(dispute=order.dispute_case, body="توضیح تکمیلی").exists())
 
     def test_seller_can_view_order_detail(self):
         self._create_order(quantity=1)

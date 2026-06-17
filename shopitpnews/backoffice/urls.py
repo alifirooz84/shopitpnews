@@ -16,5 +16,6 @@ urlpatterns = [
     path("settlements/<int:pk>/paid/", views.mark_settlement_paid, name="mark_settlement_paid"),
     path("disputes/", views.disputes, name="disputes"),
     path("disputes/<int:pk>/", views.dispute_detail, name="dispute_detail"),
+    path("disputes/<int:pk>/message/", views.add_dispute_message, name="add_dispute_message"),
     path("disputes/<int:pk>/resolve/", views.resolve_dispute, name="resolve_dispute"),
 ]

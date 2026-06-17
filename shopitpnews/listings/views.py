@@ -4,6 +4,8 @@ from django.db.models import Avg, Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
+from engagement.models import FavoriteListing
+
 from .forms import ListingForm
 from .models import Listing, MarketPrice
 
@@ -50,7 +52,10 @@ def listing_list(request):
 
 def listing_detail(request, pk):
     listing = get_object_or_404(Listing.objects.select_related("seller"), pk=pk)
-    return render(request, "listings/ad_detail.html", {"listing": listing})
+    is_favorited = False
+    if request.user.is_authenticated:
+        is_favorited = FavoriteListing.objects.filter(user=request.user, listing=listing).exists()
+    return render(request, "listings/ad_detail.html", {"listing": listing, "is_favorited": is_favorited})
 
 
 @login_required

@@ -68,7 +68,7 @@
             <span class="block text-xs text-gray-500">قیمت هر قطعه</span>
             <strong class="text-[#0d631b] text-xl">{{ listing.price_per_chick }} تومان</strong>
           </div>
-          <a href="{{ listing.get_absolute_url }}" class="bg-[#0d631b] text-white px-5 py-2 rounded-xl">جزئیات و خرید</a>
+          <div class="flex gap-2"><a href="{{ listing.get_absolute_url }}" class="bg-[#0d631b] text-white px-5 py-2 rounded-xl">جزئیات و خرید</a>{% if user.is_authenticated %}<form method="post" action="{% url 'engagement:toggle_favorite' listing.id %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="rounded-xl border-2 border-[#0d631b] px-3 py-2 text-[#0d631b]">☆</button></form>{% endif %}</div>
         </div>
       </div>
     </article>

@@ -19,6 +19,7 @@ INSTALLED_APPS = [
     "payments",
     "backoffice",
     "notifications",
+    "engagement",
 ]
 
 MIDDLEWARE = [

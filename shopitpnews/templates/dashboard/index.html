@@ -21,7 +21,7 @@
     </div>
   </section>
 
-  {% if user.is_authenticated %}<section class="px-4 pt-4"><a href="{% url 'payments:financial_report' %}" class="block rounded-2xl bg-white p-4 text-center text-[#0d631b] shadow font-bold">گزارش مالی و تسویه‌ها</a></section>{% endif %}
+  {% if user.is_authenticated %}<section class="grid grid-cols-3 gap-3 px-4 pt-4"><a href="{% url 'payments:financial_report' %}" class="rounded-2xl bg-white p-4 text-center text-[#0d631b] shadow font-bold">مالی</a><a href="{% url 'engagement:favorites' %}" class="rounded-2xl bg-white p-4 text-center text-[#0d631b] shadow font-bold">علاقه‌مندی‌ها</a><a href="{% url 'engagement:conversations' %}" class="rounded-2xl bg-white p-4 text-center text-[#0d631b] shadow font-bold">گفت‌وگوها</a></section>{% endif %}
   <section class="grid grid-cols-2 gap-4 p-4">
     <a href="{% if user.is_authenticated %}{% url 'listings:create' %}{% else %}{% url 'accounts:login' %}?next={% url 'listings:create' %}{% endif %}" class="rounded-2xl bg-[#0d631b] text-white p-6 text-center shadow-lg font-bold">ثبت آگهی</a>
     <a href="{% url 'listings:list' %}" class="rounded-2xl bg-[#005db7] text-white p-6 text-center shadow-lg font-bold">جستجوی خرید</a>
